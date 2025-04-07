@@ -1,5 +1,9 @@
 package gui;
 
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.SerializationFeature;
+
 import javax.swing.*;
 import java.awt.*;
 import java.beans.PropertyVetoException;
@@ -10,10 +14,11 @@ import java.util.List;
 public class WindowSetter extends JInternalFrame {
 
     private final String homeDirectory = System.getProperty("user.home");
-    private final String fileName = "dataToRestore.txt";
+    private final String fileName = "dataToRestore.json";
     private final String filePath = homeDirectory + File.separator + fileName;
 
-    private final Map<String, Map<String, String>> allFrames = new HashMap<>();
+    private final ObjectMapper objectMapper = new ObjectMapper();
+    private final Map<String, Map<String, Object>> allFrames = new HashMap<>();
 
     public WindowSetter() {
         JPanel panel = new JPanel(new BorderLayout());
@@ -30,7 +35,6 @@ public class WindowSetter extends JInternalFrame {
         setMaximizable(maximizable);
         setIconifiable(iconifiable);
         pack();
-
         setLastState();
     }
 
@@ -39,31 +43,31 @@ public class WindowSetter extends JInternalFrame {
         Point location = frame.getLocation();
         String title = frame.getTitle();
 
-        Map<String, String> frameData = new HashMap<>();
+        Map<String, Object> frameData = new LinkedHashMap<>();
         frameData.put("title", title);
-        frameData.put("x", String.valueOf(location.x));
-        frameData.put("y", String.valueOf(location.y));
-        frameData.put("width", String.valueOf(size.width));
-        frameData.put("height", String.valueOf(size.height));
-        frameData.put("isIcon", String.valueOf(frame.isIcon()));
+        frameData.put("x", location.x);
+        frameData.put("y", location.y);
+        frameData.put("width", size.width);
+        frameData.put("height", size.height);
+        frameData.put("isIcon", frame.isIcon());
 
         allFrames.put(title, frameData);
     }
 
     public void setLastState() {
         if (allFrames.containsKey(getTitle())) {
-            Map<String, String> frameData = allFrames.get(getTitle());
+            Map<String, Object> frameData = allFrames.get(getTitle());
             EventQueue.invokeLater(() -> {
                 try {
                     setLocation(
-                            Integer.parseInt(frameData.get("x")),
-                            Integer.parseInt(frameData.get("y"))
+                            ((Number) frameData.get("x")).intValue(),
+                            ((Number) frameData.get("y")).intValue()
                     );
                     setSize(
-                            Integer.parseInt(frameData.get("width")),
-                            Integer.parseInt(frameData.get("height"))
+                            ((Number) frameData.get("width")).intValue(),
+                            ((Number) frameData.get("height")).intValue()
                     );
-                    setIcon(Boolean.parseBoolean(frameData.get("isIcon")));
+                    setIcon((Boolean) frameData.get("isIcon"));
                 } catch (PropertyVetoException e) {
                     System.err.println(e.getMessage());
                 }
@@ -72,19 +76,10 @@ public class WindowSetter extends JInternalFrame {
     }
 
     public void saveLastStateData() {
-        List<String> keyOrder = Arrays.asList("title", "x", "y", "width", "height", "isIcon");
-
-        try (FileWriter writer = new FileWriter(filePath)) {
-            for (Map<String, String> frameData : allFrames.values()) {
-                List<String> orderedValues = new ArrayList<>();
-                for (String key : keyOrder) {
-                    orderedValues.add(frameData.get(key));
-                }
-                String line = String.join(";", orderedValues);
-                writer.write(line + "\n");
-            }
+        try {
+            objectMapper.writeValue(new File(filePath), allFrames.values());
         } catch (IOException e) {
-            System.out.println(e.getMessage());
+            System.err.println("Error saving window state: " + e.getMessage());
         }
     }
 
@@ -92,23 +87,19 @@ public class WindowSetter extends JInternalFrame {
         allFrames.clear();
 
         File file = new File(filePath);
-        try (BufferedReader reader = new BufferedReader(new FileReader(filePath))) {
-            String line;
-            while ((line = reader.readLine()) != null) {
-                String[] values = line.split(";");
 
-                Map<String, String> frameData = new HashMap<>();
-                frameData.put("title", values[0]);
-                frameData.put("x", values[1]);
-                frameData.put("y", values[2]);
-                frameData.put("width", values[3]);
-                frameData.put("height", values[4]);
-                frameData.put("isIcon", values[5]);
+        try {
+            List<Map<String, Object>> framesList = objectMapper.readValue(
+                    file, new TypeReference<>() {
+                    });
 
-                allFrames.put(values[0], frameData);
+            for (Map<String, Object> frameData : framesList) {
+                if (frameData.containsKey("title")) {
+                    allFrames.put(frameData.get("title").toString(), frameData);
+                }
             }
         } catch (IOException e) {
-            System.out.println(e.getMessage());
+            System.err.println("Error loading window state: " + e.getMessage());
         }
     }
 }
